@@ -100,28 +100,30 @@ let cacheMediaSource = {
     id: null,
     urls: {},
 };
-function getQuality(label) {
-    if (label === "small") {
-        return "standard";
-    }
-    else if (label === "tiny") {
-        return "low";
-    }
-    else if (label === "medium") {
-        return "high";
-    }
-    else if (label === "large") {
-        return "super";
-    }
-    else {
-        return "standard";
-    }
+function getBitrate(format) {
+    return Number(format.averageBitrate || format.bitrate || 0);
+}
+function getAudioFormats(formats) {
+    const audioFormats = formats
+        .filter((it) => it.url && /^audio\//.test(it.mimeType || ""))
+        .sort((a, b) => getBitrate(a) - getBitrate(b));
+    const mp4AudioFormats = audioFormats.filter((it) => { var _a; return (_a = it.mimeType) === null || _a === void 0 ? void 0 : _a.includes("audio/mp4"); });
+    return mp4AudioFormats.length ? mp4AudioFormats : audioFormats;
+}
+function getPlayableFormats(formats) {
+    return formats
+        .filter((it) => it.url && it.audioQuality)
+        .sort((a, b) => getBitrate(a) - getBitrate(b));
 }
 async function getMediaSource(musicItem, quality) {
     var _a, _b;
     if (musicItem.id === cacheMediaSource.id) {
         return {
-            url: cacheMediaSource.urls[quality],
+            url: cacheMediaSource.urls[quality] ||
+                cacheMediaSource.urls.standard ||
+                cacheMediaSource.urls.high ||
+                cacheMediaSource.urls.low ||
+                cacheMediaSource.urls.super,
         };
     }
     cacheMediaSource = {
@@ -136,16 +138,16 @@ async function getMediaSource(musicItem, quality) {
                 screenPixelDensity: 1,
                 utcOffsetMinutes: 120,
                 hl: "en",
-                gl: "GB",
-                remoteHost: "1.1.1.1",
-                deviceMake: "",
-                deviceModel: "",
-                userAgent: "com.google.android.apps.youtube.music/6.14.50 (Linux; U; Android 13; GB) gzip",
-                clientName: "ANDROID_MUSIC",
-                clientVersion: "6.14.50",
+                gl: "US",
+                deviceMake: "Oculus",
+                deviceModel: "Quest 3",
+                androidSdkVersion: 32,
+                userAgent: "com.google.android.apps.youtube.vr.oculus/1.65.10 (Linux; U; Android 12L; eureka-user Build/SQ3A.220605.009.A1) gzip",
+                clientName: "ANDROID_VR",
+                clientVersion: "1.65.10",
                 osName: "Android",
-                osVersion: "13",
-                originalUrl: "https://www.youtube.com/tv?is_account_switch=1&hrld=1&fltor=1",
+                osVersion: "12L",
+                originalUrl: "https://www.youtube.com/",
                 theme: "CLASSIC",
                 platform: "MOBILE",
                 clientFormFactor: "UNKNOWN_FORM_FACTOR",
@@ -161,27 +163,42 @@ async function getMediaSource(musicItem, quality) {
         },
         contentCheckOk: true,
         racyCheckOk: true,
-        video_id: musicItem.id,
+        videoId: musicItem.id,
     };
     var config = {
         method: "post",
         url: "https://www.youtube.com/youtubei/v1/player?prettyPrint=false",
         headers: {
             "Content-Type": "application/json",
+            "User-Agent": "com.google.android.apps.youtube.vr.oculus/1.65.10 (Linux; U; Android 12L; eureka-user Build/SQ3A.220605.009.A1) gzip",
         },
         data: JSON.stringify(data),
     };
     const result = (await (0, axios_1.default)(config)).data;
-    const formats = (_a = result.streamingData.formats) !== null && _a !== void 0 ? _a : [];
-    const adaptiveFormats = (_b = result.streamingData.adaptiveFormats) !== null && _b !== void 0 ? _b : [];
-    [...formats, ...adaptiveFormats].forEach((it) => {
-        const q = getQuality(it.quality);
-        if (q && it.url && !cacheMediaSource.urls[q]) {
-            cacheMediaSource.urls[q] = it.url;
-        }
-    });
+    const formats = (_a = result.streamingData) === null || _a === void 0 ? void 0 : _a.formats;
+    const adaptiveFormats = (_b = result.streamingData) === null || _b === void 0 ? void 0 : _b.adaptiveFormats;
+    const playableFormats = [...(formats !== null && formats !== void 0 ? formats : []), ...(adaptiveFormats !== null && adaptiveFormats !== void 0 ? adaptiveFormats : [])];
+    const audioFormats = getAudioFormats(playableFormats);
+    const fallbackFormats = getPlayableFormats(playableFormats);
+    const sourceFormats = audioFormats.length ? audioFormats : fallbackFormats;
+    const lowQualityFormat = sourceFormats[0];
+    const highQualityFormat = sourceFormats[sourceFormats.length - 1];
+    const standardQualityFormat = sourceFormats[Math.floor((sourceFormats.length - 1) / 2)];
+    cacheMediaSource = {
+        id: musicItem.id,
+        urls: {
+            low: lowQualityFormat === null || lowQualityFormat === void 0 ? void 0 : lowQualityFormat.url,
+            standard: (standardQualityFormat === null || standardQualityFormat === void 0 ? void 0 : standardQualityFormat.url) || (lowQualityFormat === null || lowQualityFormat === void 0 ? void 0 : lowQualityFormat.url),
+            high: (highQualityFormat === null || highQualityFormat === void 0 ? void 0 : highQualityFormat.url) || (standardQualityFormat === null || standardQualityFormat === void 0 ? void 0 : standardQualityFormat.url),
+            super: (highQualityFormat === null || highQualityFormat === void 0 ? void 0 : highQualityFormat.url) || (standardQualityFormat === null || standardQualityFormat === void 0 ? void 0 : standardQualityFormat.url),
+        },
+    };
     return {
-        url: cacheMediaSource.urls[quality],
+        url: cacheMediaSource.urls[quality] ||
+            cacheMediaSource.urls.standard ||
+            cacheMediaSource.urls.high ||
+            cacheMediaSource.urls.low ||
+            cacheMediaSource.urls.super,
     };
 }
 module.exports = {
